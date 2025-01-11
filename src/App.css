@@ -1,0 +1,262 @@
+:root {
+  --primary-color: #646cff;
+  --primary-hover: #535bf2;
+  --background-color: #1a1a1a;
+  --card-background: #242424;
+  --text-color: rgba(255, 255, 255, 0.87);
+  --border-color: #444;
+  --menu-background: #181818;
+  --menu-text: rgba(255, 255, 255, 0.7);
+  --menu-active: var(--primary-color);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.light-mode {
+  --background-color: #ffffff;
+  --card-background: #f5f5f5;
+  --text-color: #213547;
+  --border-color: #ddd;
+  --menu-background: #f0f0f0;
+  --menu-text: #333;
+  --menu-active: var(--primary-color);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.side-menu {
+  width: 250px;
+  background-color: var(--menu-background);
+  padding: 1rem;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.menu-header {
+  padding: 1rem;
+  margin-bottom: 2rem;
+}
+
+.menu-header h1 {
+  font-size: 1.5rem;
+  color: var(--text-color);
+}
+
+.side-menu ul {
+  list-style: none;
+  flex-grow: 1;
+}
+
+.side-menu li {
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  color: var(--menu-text);
+  transition: all 0.2s;
+}
+
+.side-menu li:hover {
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+.side-menu li.active {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.theme-toggle {
+  padding: 1rem;
+}
+
+.theme-toggle button {
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  background-color: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.theme-toggle button:hover {
+  background-color: var(--primary-hover);
+}
+
+.content-area {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1200px;
+}
+
+.input-section {
+  display: grid;
+  gap: 2rem;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-group h2 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 200px;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background-color: var(--card-background);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(100, 108, 255, 0.1);
+}
+
+.primary {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.analysis-section {
+  max-width: 800px;
+}
+
+.score-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.score {
+  font-size: 1.5rem;
+  font-weight: 700;
+  padding: 1.5rem;
+  text-align: center;
+  border-radius: 0.5rem;
+  width: 200px;
+}
+
+.analysis-content {
+  background-color: var(--card-background);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  line-height: 1.6;
+}
+
+.analysis-content h2 {
+  margin-bottom: 1rem;
+}
+
+.actionable-items-section {
+  max-width: 800px;
+}
+
+.actionable-content {
+  background-color: var(--card-background);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.optimize-section,
+.cover-letter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.save-buttons {
+  display: flex;
+  gap: 1rem;
+}
+
+.save-buttons button {
+  flex: 1;
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-buttons button:hover {
+  background-color: var(--background-color);
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.controls input {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background-color: var(--card-background);
+  color: var(--text-color);
+}
+
+.error {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 0.5rem;
+  color: #dc2626;
+}
