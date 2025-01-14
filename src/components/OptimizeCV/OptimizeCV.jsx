@@ -1,19 +1,33 @@
 import React from 'react';
 import './OptimizeCV.css';
 import { BaseComponent } from '../common/BaseComponent';
-import { LightBulbIcon } from '@heroicons/react/24/outline';
 import { SectionHeader } from '../common/CommonComponents';
+import { 
+  LightBulbIcon,
+  ClipboardDocumentIcon,
+  ClipboardDocumentCheckIcon
+} from '@heroicons/react/24/outline';
 
 class OptimizeCV extends BaseComponent {
   state = {
     improvements: [],
-    error: null
+    error: null,
+    copiedStates: {}
   };
+
+  copyTimeouts = {};
 
   componentDidMount() {
     if (this.props.optimizedCV) {
       this.processImprovements();
     }
+  }
+
+  componentWillUnmount() {
+    // Clear all timeouts
+    Object.values(this.copyTimeouts).forEach(timeout => {
+      clearTimeout(timeout);
+    });
   }
 
   componentDidUpdate(prevProps) {
@@ -55,6 +69,47 @@ class OptimizeCV extends BaseComponent {
     }
   };
 
+  handleCopy = (text, index) => {
+    try {
+      // Create a temporary textarea element
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = text;
+      document.body.appendChild(tempTextArea);
+      
+      // Select and copy the text
+      tempTextArea.select();
+      document.execCommand('copy');
+      
+      // Remove the temporary element
+      document.body.removeChild(tempTextArea);
+      
+      // Update copied state for this specific improvement
+      this.setState(prevState => ({
+        copiedStates: {
+          ...prevState.copiedStates,
+          [index]: true
+        }
+      }));
+      
+      // Clear existing timeout if any
+      if (this.copyTimeouts[index]) {
+        clearTimeout(this.copyTimeouts[index]);
+      }
+      
+      // Set new timeout
+      this.copyTimeouts[index] = setTimeout(() => {
+        this.setState(prevState => ({
+          copiedStates: {
+            ...prevState.copiedStates,
+            [index]: false
+          }
+        }));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
   getImpactClass = (impact) => {
     switch (impact?.toLowerCase()) {
       case 'high': return 'impact-high';
@@ -62,6 +117,29 @@ class OptimizeCV extends BaseComponent {
       case 'low': return 'impact-low';
       default: return 'impact-medium';
     }
+  };
+
+  renderCopyButton = (text, index) => {
+    const isCopied = this.state.copiedStates[index];
+    return (
+      <button
+        className={`copy-button ${isCopied ? 'copied' : ''}`}
+        onClick={() => this.handleCopy(text, index)}
+        title="Copy to clipboard"
+      >
+        {isCopied ? (
+          <>
+            <ClipboardDocumentCheckIcon />
+            <span>Copied!</span>
+          </>
+        ) : (
+          <>
+            <ClipboardDocumentIcon />
+            <span>Copy</span>
+          </>
+        )}
+      </button>
+    );
   };
 
   renderImprovement = (improvement, index) => {
@@ -80,6 +158,7 @@ class OptimizeCV extends BaseComponent {
             {improvement.original}
           </div>
           <div className="text-block improved">
+            {this.renderCopyButton(improvement.improved, index)}
             {improvement.improved}
           </div>
         </div>
