@@ -1,311 +1,234 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
-import { saveAsPDF, saveAsDOC } from './utils/fileSaver';
+import { SECTIONS, PROMPTS } from './utils/constants';
+import { useApi } from './hooks/useApi';
+import { Button, MenuItem } from './components/common/CommonComponents';
+import Input from './components/Input/Input';
+import Analysis from './components/Analysis/Analysis';
+import ActionableItems from './components/ActionableItems/ActionableItems';
+import OptimizeCV from './components/OptimizeCV/OptimizeCV';
+import CoverLetter from './components/CoverLetter/CoverLetter';
+import { extractNameFromCV } from './utils/nameExtractor';
+import { 
+  DocumentTextIcon, 
+  ChartBarIcon, 
+  ClipboardDocumentListIcon, 
+  DocumentDuplicateIcon, 
+  EnvelopeIcon,
+  SunIcon,
+  MoonIcon
+} from '@heroicons/react/24/outline';
+
+const MENU_ITEMS = [
+  { id: SECTIONS.INPUT, icon: DocumentTextIcon, label: 'Input' },
+  { id: SECTIONS.ANALYSIS, icon: ChartBarIcon, label: 'Analysis' },
+  { id: SECTIONS.ACTIONABLE, icon: ClipboardDocumentListIcon, label: 'Actions' },
+  { id: SECTIONS.OPTIMIZE, icon: DocumentDuplicateIcon, label: 'Optimise CV' },
+  { id: SECTIONS.COVER, icon: EnvelopeIcon, label: 'Cover Letter' }
+];
 
 function App() {
-  const [cvText, setCvText] = useState('');
-  const [jobDescription, setJobDescription] = useState('');
-  const [score, setScore] = useState(null);
-  const [justification, setJustification] = useState('');
-  const [actionableItems, setActionableItems] = useState('');
-  const [coverLetter, setCoverLetter] = useState('');
-  const [optimizedCV, setOptimizedCV] = useState('');
-  const [wordLimit, setWordLimit] = useState(200);
-  const [loadingState, setLoadingState] = useState({ 
-    analyzing: false, 
-    generating: false, 
-    optimizing: false 
+  const [state, setState] = useState({
+    cvText: '',
+    jobDescription: '',
+    wordLimit: 200,
+    activeSection: SECTIONS.INPUT,
+    isDarkMode: true,
+    originalFile: null
   });
-  const [error, setError] = useState('');
-  const [activeSection, setActiveSection] = useState('input');
-  const [isDarkMode, setIsDarkMode] = useState(true);
 
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-    document.body.classList.toggle('light-mode');
-  };
+  const analysisApi = useApi();
+  const actionsApi = useApi();
+  const coverLetterApi = useApi();
+  const optimizeApi = useApi();
 
-  const handleApiCall = async (prompt, stateKey, successHandler) => {
-    if (!cvText.trim() || !jobDescription.trim()) {
-      setError('Please provide both CV and Job Description');
-      return;
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      setState(prev => ({ ...prev, isDarkMode: savedTheme === 'dark' }));
+      document.body.classList.toggle('light-mode', savedTheme === 'light');
     }
+  }, []);
 
-    setLoadingState(prev => ({ ...prev, [stateKey]: true }));
-    setError('');
+  const isInputEmpty = !state.cvText.trim() || !state.jobDescription.trim();
 
-    try {
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_DEEPSEEK_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
-          max_tokens: stateKey === 'optimizing' ? 2000 : 1000
-        })
-      });
+  const handleCvChange = useCallback((value, originalFile = null) => {
+    setState(prev => ({
+      ...prev,
+      cvText: typeof value === 'string' ? value : value.target.value,
+      originalFile: originalFile
+    }));
+  }, []);
 
-      const responseData = await response.json();
-      if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
-      if (!responseData.choices?.[0]?.message?.content) throw new Error('Invalid API response format');
+  const handleInputChange = useCallback((field) => (e) => {
+    setState(prev => ({ ...prev, [field]: e.target.value }));
+  }, []);
 
-      successHandler(responseData.choices[0].message.content);
-    } catch (error) {
-      console.error('Error:', error);
-      setError(`${stateKey === 'analyzing' ? 'Analysis' : 
-                stateKey === 'generating' ? 'Cover letter generation' : 
-                'CV optimization'} failed: ${error.message}`);
-    } finally {
-      setLoadingState(prev => ({ ...prev, [stateKey]: false }));
-    }
-  };
+  const handleSectionChange = useCallback((section) => {
+    setState(prev => ({ ...prev, activeSection: section }));
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setState(prev => {
+      const newIsDarkMode = !prev.isDarkMode;
+      localStorage.setItem('theme', newIsDarkMode ? 'dark' : 'light');
+      document.body.classList.toggle('light-mode', !newIsDarkMode);
+      return { ...prev, isDarkMode: newIsDarkMode };
+    });
+  }, []);
 
   const handleAnalyze = async () => {
-    const prompt = `Analyze this CV and Job Description:
-      CV: ${cvText}
-      Job Description: ${jobDescription}
-      Provide: 1. A suitability score (0-100) 2. A concise analysis (max 150 words, second person)
-      Format response as JSON: { "score": number, "justification": string }`;
+    if (isInputEmpty) return false;
 
-    await handleApiCall(prompt, 'analyzing', (content) => {
-      const cleanedContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
-      const result = JSON.parse(cleanedContent);
-      setScore(result.score);
-      setJustification(result.justification);
-      
-      const actionPrompt = `Based on this CV and Job Description:
-        CV: ${cvText}
-        Job Description: ${jobDescription}
-        Provide: 1. Specific areas to improve 2. Actionable steps (max 150 words)
-        Format as a list without bullet points`;
-      
-      handleApiCall(actionPrompt, 'analyzing', (actionContent) => {
-        setActionableItems(actionContent);
-      });
-      
-      setActiveSection('analysis');
+    try {
+      // Run all analyses in parallel
+      const [analysisResult, actionsResult, optimizeResult] = await Promise.all([
+        analysisApi.execute(
+          PROMPTS.ANALYZE(state.cvText, state.jobDescription),
+          true
+        ),
+        actionsApi.execute(
+          PROMPTS.ACTIONS(state.cvText, state.jobDescription)
+        ),
+        optimizeApi.execute(
+          PROMPTS.OPTIMIZE(state.cvText, state.jobDescription)
+        )
+      ]);
+
+      if (analysisResult) {
+        handleSectionChange(SECTIONS.ANALYSIS);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      return false;
+    }
+  };
+
+  const formatCoverLetter = (text) => {
+    const today = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
+
+    const userName = extractNameFromCV(state.cvText);
+
+    return text
+      .replace('[Your Name]', userName)
+      .replace('[Date]', today);
   };
 
   const handleGenerateCoverLetter = async () => {
-    const prompt = `Write a professional cover letter based on:
-      CV: ${cvText}
-      Job Description: ${jobDescription}
-      Requirements: 1. Professional tone 2. Highlight relevant skills
-      3. Under ${wordLimit} words 4. Address hiring manager
-      5. Strong opening/closing`;
+    if (isInputEmpty) return;
+    
+    const result = await coverLetterApi.execute(
+      PROMPTS.COVER_LETTER(state.cvText, state.jobDescription, state.wordLimit)
+    );
 
-    await handleApiCall(prompt, 'generating', (content) => {
-      setCoverLetter(content);
-      setActiveSection('coverLetter');
-    });
-  };
-
-  const handleOptimizeCV = async () => {
-    const prompt = `Optimize this CV for the job description:
-      Original CV: ${cvText}
-      Job Description: ${jobDescription}
-      Requirements: 1. Keep factual info 2. No new info
-      3. Maintain format 4. Reorganize for job requirements
-      5. Highlight relevant skills 6. Keep original length`;
-
-    await handleApiCall(prompt, 'optimizing', (content) => {
-      setOptimizedCV(content);
-      setActiveSection('optimizeCV');
-    });
-  };
-
-  const handleSavePDF = () => {
-    if (!optimizedCV) {
-      setError('No optimized CV to save');
-      return;
+    if (result) {
+      return formatCoverLetter(result);
     }
-    saveAsPDF(optimizedCV);
   };
 
-  const handleSaveDOC = () => {
-    if (!optimizedCV) {
-      setError('No optimized CV to save');
-      return;
-    }
-    saveAsDOC(optimizedCV);
-  };
+  const renderSection = () => {
+    const sections = {
+      [SECTIONS.INPUT]: (
+        <Input
+          cvText={state.cvText}
+          jobDescription={state.jobDescription}
+          onCvChange={handleCvChange}
+          onJobChange={handleInputChange('jobDescription')}
+          onAnalyze={handleAnalyze}
+          isLoading={analysisApi.loading || actionsApi.loading || optimizeApi.loading}
+          error={analysisApi.error || actionsApi.error || optimizeApi.error}
+        />
+      ),
+      [SECTIONS.ANALYSIS]: (
+        <Analysis
+          score={analysisApi.data?.score}
+          justification={analysisApi.data?.justification}
+          breakdown={analysisApi.data?.breakdown}
+          cvText={state.cvText}
+          jobDescription={state.jobDescription}
+          error={analysisApi.error}
+        />
+      ),
+      [SECTIONS.ACTIONABLE]: (
+        <ActionableItems 
+          actionableItems={actionsApi.data}
+          error={actionsApi.error}
+        />
+      ),
+      [SECTIONS.OPTIMIZE]: (
+        <OptimizeCV
+          optimizedCV={optimizeApi.data}
+          originalCV={state.cvText}
+          originalFile={state.originalFile}
+          isLoading={optimizeApi.loading}
+          error={optimizeApi.error}
+        />
+      ),
+      [SECTIONS.COVER]: (
+        <CoverLetter
+          wordLimit={state.wordLimit}
+          onWordLimitChange={handleInputChange('wordLimit')}
+          onGenerate={handleGenerateCoverLetter}
+          coverLetter={coverLetterApi.data}
+          isLoading={coverLetterApi.loading}
+          error={coverLetterApi.error}
+        />
+      )
+    };
 
-  const getScoreColor = (score) => {
-    if (score === null) return '#666';
-    if (score >= 80) return '#4CAF50';
-    if (score >= 50) return '#FFC107';
-    return '#F44336';
+    return sections[state.activeSection] || null;
   };
-
-  const isInputEmpty = !cvText.trim() || !jobDescription.trim();
 
   return (
-    <div className={`app-container ${isDarkMode ? 'dark' : 'light'}`}>
+    <div className={`app-container ${state.isDarkMode ? 'dark' : 'light'}`}>
       <nav className="side-menu">
         <div className="menu-header">
           <h1>CV Matcher</h1>
         </div>
+        
         <ul>
-          <li 
-            className={activeSection === 'input' ? 'active' : ''}
-            onClick={() => setActiveSection('input')}
-          >
-            Input
-          </li>
-          <li 
-            className={activeSection === 'analysis' ? 'active' : ''}
-            onClick={() => !isInputEmpty && setActiveSection('analysis')}
-            style={{ opacity: isInputEmpty ? 0.5 : 1, pointerEvents: isInputEmpty ? 'none' : 'auto' }}
-          >
-            Analysis
-          </li>
-          <li 
-            className={activeSection === 'actionableItems' ? 'active' : ''}
-            onClick={() => !isInputEmpty && setActiveSection('actionableItems')}
-            style={{ opacity: isInputEmpty ? 0.5 : 1, pointerEvents: isInputEmpty ? 'none' : 'auto' }}
-          >
-            Actionable Items
-          </li>
-          <li 
-            className={activeSection === 'optimizeCV' ? 'active' : ''}
-            onClick={() => !isInputEmpty && setActiveSection('optimizeCV')}
-            style={{ opacity: isInputEmpty ? 0.5 : 1, pointerEvents: isInputEmpty ? 'none' : 'auto' }}
-          >
-            Optimize CV
-          </li>
-          <li 
-            className={activeSection === 'coverLetter' ? 'active' : ''}
-            onClick={() => !isInputEmpty && setActiveSection('coverLetter')}
-            style={{ opacity: isInputEmpty ? 0.5 : 1, pointerEvents: isInputEmpty ? 'none' : 'auto' }}
-          >
-            Cover Letter
-          </li>
+          {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
+            <MenuItem
+              key={id}
+              isActive={state.activeSection === id}
+              disabled={isInputEmpty && id !== SECTIONS.INPUT}
+              onClick={() => !isInputEmpty && handleSectionChange(id)}
+            >
+              <Icon className="w-5 h-5" />
+              <span>{label}</span>
+            </MenuItem>
+          ))}
         </ul>
+        
         <div className="theme-toggle">
-          <button onClick={toggleTheme}>
-            {isDarkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
+          <button 
+            className="theme-toggle-button"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {state.isDarkMode ? (
+              <>
+                <SunIcon className="theme-icon" />
+                <span>Light Mode</span>
+              </>
+            ) : (
+              <>
+                <MoonIcon className="theme-icon" />
+                <span>Dark Mode</span>
+              </>
+            )}
           </button>
         </div>
       </nav>
-
+      
       <main className="content-area">
-        {activeSection === 'input' && (
-          <div className="input-section">
-            <div className="input-group">
-              <h2>Your CV</h2>
-              <textarea
-                value={cvText}
-                onChange={(e) => setCvText(e.target.value)}
-                placeholder="Paste your CV here..."
-                rows={8}
-              />
-            </div>
-            
-            <div className="input-group">
-              <h2>Job Description</h2>
-              <textarea
-                value={jobDescription}
-                onChange={(e) => setJobDescription(e.target.value)}
-                placeholder="Paste the job description here..."
-                rows={8}
-              />
-            </div>
-
-            <button 
-              className="primary"
-              onClick={handleAnalyze} 
-              disabled={loadingState.analyzing || isInputEmpty}
-            >
-              {loadingState.analyzing ? 'Analyzing...' : 'Analyze'}
-            </button>
-          </div>
-        )}
-
-        {activeSection === 'analysis' && (
-          <div className="analysis-section">
-            <div className="score-container">
-              <div className="score" style={{ backgroundColor: getScoreColor(score) }}>
-                Match Score: {score}
-              </div>
-              <div className="analysis-content">
-                <h2>Analysis</h2>
-                <p>{justification}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'actionableItems' && (
-          <div className="actionable-items-section">
-            <h2>Actionable Items</h2>
-            <div className="actionable-content">
-              {actionableItems}
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'optimizeCV' && (
-          <div className="optimize-section">
-            <button 
-              className="primary"
-              onClick={handleOptimizeCV} 
-              disabled={loadingState.optimizing}
-            >
-              {loadingState.optimizing ? 'Optimizing...' : 'Optimize CV'}
-            </button>
-            {optimizedCV && (
-              <>
-                <textarea 
-                  value={optimizedCV} 
-                  readOnly 
-                  rows={12} 
-                />
-                <div className="save-buttons">
-                  <button onClick={handleSavePDF}>Save as PDF</button>
-                  <button onClick={handleSaveDOC}>Save as DOC</button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {activeSection === 'coverLetter' && (
-          <div className="cover-letter-section">
-            <div className="controls">
-              <label>
-                <span>Word Limit:</span>
-                <input
-                  type="number"
-                  value={wordLimit}
-                  onChange={(e) => setWordLimit(e.target.value)}
-                  min="100"
-                  max="1000"
-                />
-              </label>
-              <button 
-                className="primary"
-                onClick={handleGenerateCoverLetter} 
-                disabled={loadingState.generating}
-              >
-                {loadingState.generating ? 'Generating...' : 'Generate Cover Letter'}
-              </button>
-            </div>
-            {coverLetter && (
-              <textarea 
-                value={coverLetter} 
-                readOnly 
-                rows={12} 
-              />
-            )}
-          </div>
-        )}
-
-        {error && <div className="error">{error}</div>}
+        {renderSection()}
       </main>
     </div>
   );
