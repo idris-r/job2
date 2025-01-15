@@ -1,13 +1,18 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import './App.css';
-import { SECTIONS, PROMPTS } from './utils/constants';
+import { SECTIONS, PROMPTS, TOKEN_COSTS, TOKEN_MESSAGES } from './utils/constants';
 import { useApi } from './hooks/useApi';
 import { Button, MenuItem } from './components/common/CommonComponents';
+import Landing from './components/Landing/Landing';
 import Input from './components/Input/Input';
 import Analysis from './components/Analysis/Analysis';
 import ActionableItems from './components/ActionableItems/ActionableItems';
 import OptimizeCV from './components/OptimizeCV/OptimizeCV';
 import CoverLetter from './components/CoverLetter/CoverLetter';
+import Interview from './components/Interview/Interview';
+import Billing from './components/Billing/Billing';
+import Account from './components/Account/Account';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { extractNameFromCV } from './utils/nameExtractor';
 import { 
   DocumentTextIcon, 
@@ -15,8 +20,12 @@ import {
   ClipboardDocumentListIcon, 
   DocumentDuplicateIcon, 
   EnvelopeIcon,
+  ChatBubbleBottomCenterTextIcon,
+  UserCircleIcon,
   SunIcon,
-  MoonIcon
+  MoonIcon,
+  ExclamationCircleIcon,
+  CircleStackIcon
 } from '@heroicons/react/24/outline';
 
 const MENU_ITEMS = [
@@ -24,23 +33,30 @@ const MENU_ITEMS = [
   { id: SECTIONS.ANALYSIS, icon: ChartBarIcon, label: 'Analysis' },
   { id: SECTIONS.ACTIONABLE, icon: ClipboardDocumentListIcon, label: 'Actions' },
   { id: SECTIONS.OPTIMIZE, icon: DocumentDuplicateIcon, label: 'Optimise CV' },
-  { id: SECTIONS.COVER, icon: EnvelopeIcon, label: 'Cover Letter' }
+  { id: SECTIONS.COVER, icon: EnvelopeIcon, label: 'Cover Letter' },
+  { id: SECTIONS.INTERVIEW, icon: ChatBubbleBottomCenterTextIcon, label: 'Interview Questions' },
+  { id: SECTIONS.BILLING, icon: CircleStackIcon, label: 'Billing' },
+  { id: SECTIONS.ACCOUNT, icon: UserCircleIcon, label: 'Account' }
 ];
 
-function App() {
+const AppContent = () => {
   const [state, setState] = useState({
     cvText: '',
     jobDescription: '',
     wordLimit: 200,
-    activeSection: SECTIONS.INPUT,
+    activeSection: null,
     isDarkMode: true,
-    originalFile: null
+    originalFile: null,
+    error: '',
+    showError: false
   });
 
+  const { user, updateTokenBalance } = useAuth();
   const analysisApi = useApi();
   const actionsApi = useApi();
   const coverLetterApi = useApi();
   const optimizeApi = useApi();
+  const interviewApi = useApi();
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -49,6 +65,37 @@ function App() {
       document.body.classList.toggle('light-mode', savedTheme === 'light');
     }
   }, []);
+
+  const showError = (message) => {
+    setState(prev => ({ 
+      ...prev, 
+      error: message, 
+      showError: true 
+    }));
+    setTimeout(() => {
+      setState(prev => ({ ...prev, showError: false }));
+    }, 3000);
+  };
+
+  const checkTokenBalance = (requiredTokens) => {
+    if (!user) {
+      handleSectionChange(SECTIONS.ACCOUNT);
+      showError('Please log in to use this feature');
+      return false;
+    }
+    
+    if (user.tokenBalance < requiredTokens) {
+      showError(`Insufficient tokens. You need ${requiredTokens} tokens for this action. Current balance: ${user.tokenBalance}`);
+      return false;
+    }
+    
+    return true;
+  };
+
+  const deductTokens = (amount) => {
+    const newBalance = user.tokenBalance - amount;
+    updateTokenBalance(newBalance);
+  };
 
   const isInputEmpty = !state.cvText.trim() || !state.jobDescription.trim();
 
@@ -77,11 +124,25 @@ function App() {
     });
   }, []);
 
+  const handleGetStarted = () => {
+    if (state.activeSection === SECTIONS.BILLING || state.activeSection === SECTIONS.ACCOUNT) {
+      return;
+    }
+    handleSectionChange(SECTIONS.INPUT);
+  };
+
+  // Only show landing page if no active section and not on billing or account
+  if (!state.activeSection && 
+      state.activeSection !== SECTIONS.BILLING && 
+      state.activeSection !== SECTIONS.ACCOUNT) {
+    return <Landing onGetStarted={handleGetStarted} />;
+  }
+
   const handleAnalyze = async () => {
     if (isInputEmpty) return false;
+    if (!checkTokenBalance(TOKEN_COSTS.ANALYSIS)) return false;
 
     try {
-      // Run all analyses in parallel
       const [analysisResult, actionsResult, optimizeResult] = await Promise.all([
         analysisApi.execute(
           PROMPTS.ANALYZE(state.cvText, state.jobDescription),
@@ -96,6 +157,7 @@ function App() {
       ]);
 
       if (analysisResult) {
+        deductTokens(TOKEN_COSTS.ANALYSIS);
         handleSectionChange(SECTIONS.ANALYSIS);
         return true;
       }
@@ -103,6 +165,39 @@ function App() {
     } catch (error) {
       console.error('Analysis failed:', error);
       return false;
+    }
+  };
+
+  const handleGenerateCoverLetter = async () => {
+    if (isInputEmpty) return;
+    if (!checkTokenBalance(TOKEN_COSTS.COVER_LETTER)) return;
+    
+    const result = await coverLetterApi.execute(
+      PROMPTS.COVER_LETTER(state.cvText, state.jobDescription, state.wordLimit)
+    );
+
+    if (result) {
+      deductTokens(TOKEN_COSTS.COVER_LETTER);
+      return formatCoverLetter(result);
+    }
+  };
+
+  const handleGenerateQuestions = async () => {
+    if (isInputEmpty) return;
+    if (!checkTokenBalance(TOKEN_COSTS.INTERVIEW)) return;
+    
+    try {
+      const result = await interviewApi.execute(
+        PROMPTS.INTERVIEW_QUESTIONS(state.cvText, state.jobDescription),
+        true
+      );
+      if (result) {
+        deductTokens(TOKEN_COSTS.INTERVIEW);
+      }
+      return result;
+    } catch (error) {
+      console.error('Failed to generate interview questions:', error);
+      return null;
     }
   };
 
@@ -118,18 +213,6 @@ function App() {
     return text
       .replace('[Your Name]', userName)
       .replace('[Date]', today);
-  };
-
-  const handleGenerateCoverLetter = async () => {
-    if (isInputEmpty) return;
-    
-    const result = await coverLetterApi.execute(
-      PROMPTS.COVER_LETTER(state.cvText, state.jobDescription, state.wordLimit)
-    );
-
-    if (result) {
-      return formatCoverLetter(result);
-    }
   };
 
   const renderSection = () => {
@@ -179,6 +262,22 @@ function App() {
           isLoading={coverLetterApi.loading}
           error={coverLetterApi.error}
         />
+      ),
+      [SECTIONS.INTERVIEW]: (
+        <Interview
+          cvText={state.cvText}
+          jobDescription={state.jobDescription}
+          error={interviewApi.error}
+          isLoading={interviewApi.loading}
+          onGenerate={handleGenerateQuestions}
+          questions={interviewApi.data}
+        />
+      ),
+      [SECTIONS.BILLING]: (
+        <Billing />
+      ),
+      [SECTIONS.ACCOUNT]: (
+        <Account />
       )
     };
 
@@ -189,23 +288,37 @@ function App() {
     <div className={`app-container ${state.isDarkMode ? 'dark' : 'light'}`}>
       <nav className="side-menu">
         <div className="menu-header">
-          <h1>CV Matcher</h1>
+          <h1>CV Senpai</h1>
         </div>
         
         <ul>
-          {MENU_ITEMS.map(({ id, icon: Icon, label }) => (
-            <MenuItem
-              key={id}
-              isActive={state.activeSection === id}
-              disabled={isInputEmpty && id !== SECTIONS.INPUT}
-              onClick={() => !isInputEmpty && handleSectionChange(id)}
-            >
-              <Icon className="w-5 h-5" />
-              <span>{label}</span>
-            </MenuItem>
-          ))}
+          {MENU_ITEMS.map(({ id, icon: Icon, label }) => {
+            const shouldBeDisabled = isInputEmpty && 
+              id !== SECTIONS.INPUT && 
+              id !== SECTIONS.ACCOUNT && 
+              id !== SECTIONS.BILLING;
+
+            return (
+              <MenuItem
+                key={id}
+                isActive={state.activeSection === id}
+                disabled={shouldBeDisabled}
+                onClick={() => handleSectionChange(id)}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{label}</span>
+              </MenuItem>
+            );
+          })}
         </ul>
-        
+
+        {user && (
+          <div className="token-balance-display">
+            <CircleStackIcon className="token-icon" />
+            <span className="token-amount">{user.tokenBalance}</span>
+          </div>
+        )}
+
         <div className="theme-toggle">
           <button 
             className="theme-toggle-button"
@@ -229,8 +342,22 @@ function App() {
       
       <main className="content-area">
         {renderSection()}
+        {state.showError && (
+          <div className="error-notification">
+            <ExclamationCircleIcon className="error-icon" />
+            {state.error}
+          </div>
+        )}
       </main>
     </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

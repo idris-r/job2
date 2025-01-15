@@ -62,7 +62,7 @@ class Input extends BaseComponent {
             <input
               type="file"
               ref={this.fileInputRef}
-              accept=".docx,.txt"
+              accept=".docx,.txt,.pdf"
               onChange={this.handleFileUpload}
               className="file-input"
             />
@@ -73,7 +73,7 @@ class Input extends BaseComponent {
             >
               <ArrowUpTrayIcon className="upload-icon" />
               <span className="upload-text">
-                {isProcessing ? 'Processing...' : 'Upload CV (.docx, .txt)'}
+                {isProcessing ? 'Processing...' : 'Upload CV (.docx, .txt, .pdf)'}
               </span>
             </Button>
             {fileName && (
@@ -111,7 +111,7 @@ class Input extends BaseComponent {
                 <span>Complete</span>
               </>
             ) : (
-              <span>{isLoading ? 'Analyzing...' : 'Analyze'}</span>
+              <span>{isLoading ? 'Senpai Thinking...' : 'Send to Senpai'}</span>
             )}
           </Button>
           {isLoading && (

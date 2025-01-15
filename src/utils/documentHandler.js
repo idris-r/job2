@@ -1,4 +1,8 @@
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+
+// Initialize PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
 export class DocumentHandler {
   static originalDocument = null;
@@ -14,11 +18,135 @@ export class DocumentHandler {
           return await this.handleDocx(file);
         case 'txt':
           return await this.handleTxt(file);
+        case 'pdf':
+          return await this.handlePdf(file);
         default:
-          throw new Error('Please upload a .docx or .txt file');
+          throw new Error('Please upload a .docx, .txt, or .pdf file');
       }
     } catch (error) {
       throw new Error(`Error processing file: ${error.message}`);
+    }
+  }
+
+  static async handlePdf(file) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      let lastY = null;
+      let currentLine = [];
+
+      // Extract text from each page
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Sort items by their vertical position (y) and then by horizontal position (x)
+        const sortedItems = textContent.items.sort((a, b) => {
+          if (Math.abs(a.transform[5] - b.transform[5]) < 5) {
+            return a.transform[4] - b.transform[4];
+          }
+          return b.transform[5] - a.transform[5];
+        });
+
+        // Process each text item
+        sortedItems.forEach((item) => {
+          const y = Math.round(item.transform[5]);
+          
+          // Check if we're on a new line
+          if (lastY !== null && Math.abs(y - lastY) > 5) {
+            // Add the current line to the full text
+            fullText += currentLine.join(' ') + '\n';
+            currentLine = [];
+          }
+
+          // Add item to current line
+          if (item.str.trim()) {
+            currentLine.push(item.str);
+          }
+
+          lastY = y;
+        });
+
+        // Add the last line of the page
+        if (currentLine.length > 0) {
+          fullText += currentLine.join(' ') + '\n';
+          currentLine = [];
+        }
+
+        // Add extra newline between pages
+        fullText += '\n';
+      }
+
+      // Clean up the text while preserving important line breaks
+      const cleanText = fullText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line) // Remove empty lines
+        .join('\n');
+
+      // Create paragraphs based on content structure
+      const paragraphs = [];
+      let currentParagraph = [];
+      let startPosition = 0;
+
+      cleanText.split('\n').forEach((line, index) => {
+        // Check if line appears to be a header or section break
+        const isHeader = line.toUpperCase() === line || 
+                        line.length < 50 || 
+                        line.endsWith(':') ||
+                        /^[A-Z\s]+$/.test(line);
+
+        if (isHeader && currentParagraph.length > 0) {
+          // Save current paragraph
+          const paragraphText = currentParagraph.join('\n');
+          paragraphs.push({
+            text: paragraphText,
+            html: `<p>${paragraphText}</p>`,
+            index: paragraphs.length,
+            startPosition
+          });
+          currentParagraph = [];
+          startPosition += paragraphText.length + 1;
+        }
+
+        currentParagraph.push(line);
+
+        // If it's a header, immediately create a paragraph for it
+        if (isHeader) {
+          const paragraphText = currentParagraph.join('\n');
+          paragraphs.push({
+            text: paragraphText,
+            html: `<p class="header">${paragraphText}</p>`,
+            index: paragraphs.length,
+            startPosition
+          });
+          currentParagraph = [];
+          startPosition += paragraphText.length + 1;
+        }
+      });
+
+      // Add any remaining content as a paragraph
+      if (currentParagraph.length > 0) {
+        const paragraphText = currentParagraph.join('\n');
+        paragraphs.push({
+          text: paragraphText,
+          html: `<p>${paragraphText}</p>`,
+          index: paragraphs.length,
+          startPosition
+        });
+      }
+
+      this.originalParagraphs = paragraphs;
+      
+      return {
+        text: cleanText,
+        originalFile: file,
+        paragraphs
+      };
+    } catch (error) {
+      console.error('PDF processing error:', error);
+      throw new Error('Error processing PDF file');
     }
   }
 
